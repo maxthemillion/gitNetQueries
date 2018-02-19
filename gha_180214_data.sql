@@ -16,7 +16,8 @@ standard_info as(
 SELECT 
   id as event_id,
   type, 
-  repo.name as repo_name, 
+  (SELECT owner_name FROM (SELECT SUBSTR(repo.name, 1, (SELECT STRPOS(repo.name, '/') - 1)) as owner_name)) as owner_name, 
+  repo.name as repo_name,
   repo.id as repo_id,
   actor.id as actor_id, 
   actor.login as actor_login, 
