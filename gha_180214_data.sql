@@ -43,7 +43,7 @@ SELECT
     FROM tabRange
     WHERE type = 'CommitCommentEvent'
     ) as cce
---  WHERE action = "created"  
+WHERE action = "created"  
 ), 
 
 
@@ -63,7 +63,7 @@ SELECT
     FROM tabRange
     WHERE type = 'PullRequestReviewCommentEvent' 
     ) as prrce
---  WHERE action = "created"  
+WHERE action = "created"  
 ),   
 
 
@@ -83,7 +83,7 @@ SELECT
            FROM tabRange
     WHERE type = 'IssueCommentEvent'
     ) as ice
---  WHERE action = "created"  
+ WHERE action = "created"  
 ), 
 
 extra_info_issue_e as (
@@ -100,7 +100,7 @@ SELECT
     FROM tabRange
     WHERE type = 'IssuesEvent'
     ) as ie
---  WHERE action = "opened"  
+ WHERE action = "opened"  
 ),
 
 extra_info_pullrequest_e as (
@@ -118,7 +118,7 @@ SELECT
     FROM tabRange
     WHERE type = 'PullRequestEvent'
     ) as pre
---  WHERE action = "opened"  
+ WHERE action = "opened"  
 ),
 
 extra_info_member_e as (
@@ -133,7 +133,7 @@ SELECT
     FROM tabRange
     WHERE type = 'MemberEvent'
     ) as me
---  WHERE action = "added"  
+  WHERE action = "added"  
 ),
 
 extra_info_release_e as (
@@ -148,7 +148,7 @@ SELECT
     FROM tabRange
     WHERE type = 'ReleaseEvent'
     ) as me
--- WHERE action = "published"  
+  WHERE action = "published"  
 ),
 
 extra_info_create_e as (
@@ -161,7 +161,7 @@ SELECT
     FROM tabRange
     WHERE type = 'CreateEvent'
     ) as ce
---  WHERE action = "repository"  
+  WHERE action = "repository"  
 )
 
 Select * 
