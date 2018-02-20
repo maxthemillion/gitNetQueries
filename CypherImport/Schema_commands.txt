@@ -1,0 +1,36 @@
+// ---prepare database schema---
+
+// create indices
+CREATE INDEX ON :USER(login)
+CREATE INDEX ON :REPO(gha_id)
+CREATE INDEX ON :OWNER(login)
+
+// create constraints
+CREATE CONSTRAINT ON (user:USER) ASSERT user.ght_id IS UNIQUE
+CREATE CONSTRAINT ON (user:USER) ASSERT user.gha_id IS UNIQUE
+
+CREATE CONSTRAINT ON (r:REPO) ASSERT r.gha_id IS UNIQUE
+// only gha_id and not ght_id gets a UNIQUE constraint, because there are multiple occurencies of ght_id in the CreateEvent.csv. This can happen, because users create repositories with a certain name, delete it and recreate it again. Within the dataset, there are 97 ght_ids matched with more than 1 gha_id. Most of them match with 2, only about 10 have more than 3.
+
+
+CREATE CONSTRAINT ON (i:ISSUE) ASSERT i.gha_id IS UNIQUE
+CREATE CONSTRAINT ON (p:PULLREQUEST) ASSERT p.gha_id IS UNIQUE
+CREATE CONSTRAINT ON (c:COMMIT) ASSERT c.sha IS UNIQUE
+
+
+// --- import data ---
+
+// CreateEvent (Repositories)
+LOAD CSV FROM "file:///201601/CreateEvent.csv" AS row
+CREATE(:REPO {full_name: row[2], gha_id: toInt(row[3]), ght_id:toInt(row[9]), event_time: row[8], ght_forked_from:toInt(row[10]), owner_login:row[13], event_id:toInt(row[0]) })
+
+// owners, who occur in the CreateEvent.csv
+LOAD CSV FROM "file:///201601/CreateEvent.csv" AS row
+WITH DISTINCT row[13] as owner_login
+CREATE(:OWNER {login:owner_login})
+
+// relationship between owners and repos
+MATCH (n:REPO)
+MATCH (o:OWNER)
+WHERE o.login = n.owner_login
+MERGE (n)-[:belongs_to]->(o)
