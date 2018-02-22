@@ -4,13 +4,15 @@ WITH tabRange as (
   SELECT data.*, ght_repo_id, forked_from as ght_forked_from
   FROM
     (SELECT *
-    FROM `githubarchive.day.2018*`
-    WHERE _TABLE_SUFFIX IN ("0219")
+    FROM `githubarchive.month.2016*`
+    WHERE _TABLE_SUFFIX IN ("01")
     and type IN ('CommitCommentEvent', 'IssueCommentEvent', 'PullRequestReviewCommentEvent', 'IssuesEvent',
     'PullRequestEvent', 'MemberEvent', 'CreateEvent', 'ReleaseEvent')) as data
     JOIN `github-181509.GitArchive_Queries.selected_repos` selected_repos
     ON data.repo.name = selected_repos.full_name
 ),
+
+
 
 standard_info as(
 SELECT 
@@ -106,7 +108,8 @@ SELECT
            (SELECT AS STRUCT
            JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.sha') as base_sha,
            JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.repo.id') as base_repo_id,
-           JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.user.login') as base_user_login) as pre,  JSON_EXTRACT_SCALAR(payload, '$.pull_request.id') as pull_request_id) as pre
+           JSON_EXTRACT_SCALAR(payload, '$.pull_request.id') as pull_request_id
+           ) as pre
            FROM tabRange
            WHERE type = 'PullRequestEvent'
     )
@@ -135,8 +138,8 @@ SELECT
     SELECT id as event_id,
            JSON_EXTRACT_SCALAR(payload, '$.action') as action,
            (SELECT AS STRUCT
-           JSON_EXTRACT_SCALAR(payload, '$.release.id') as release_id,
-           JSON_EXTRACT_SCALAR(payload, '$.release.published_at') as published_at) as re
+           JSON_EXTRACT_SCALAR(payload, '$.release.id') as release_id
+           ) as re
            FROM tabRange
            WHERE type = 'ReleaseEvent'
     )
@@ -154,10 +157,28 @@ SELECT
     WHERE type = 'CreateEvent'
     )
   WHERE action = "repository"  
+),
+
+release_filtered as (
+  SELECT JSON_EXTRACT_SCALAR(other, '$.release_id') as release_id, MIN(tabRange.id) as min_event_id
+  FROM tabRange
+  WHERE type = 'ReleaseEvent'
+  GROUP BY release_id
+), 
+
+standard_info_filtered as (
+  SELECT *
+  FROM standard_info as si
+  WHERE
+    si.type != 'ReleaseEvent' or (
+      EXISTS (
+      SELECT * FROM release_filtered 
+      WHERE si.event_id = release_filtered.min_event_id))
 )
 
+
 Select DISTINCT * 
-From standard_info JOIN 
+From standard_info_filtered JOIN 
   (SELECT * FROM extra_info_cce UNION ALL 
   SELECT * FROM extra_info_prrce UNION ALL
   SELECT * FROM extra_info_ice UNION ALL 
