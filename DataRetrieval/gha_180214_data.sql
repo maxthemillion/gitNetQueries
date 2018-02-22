@@ -75,8 +75,7 @@ SELECT
            JSON_EXTRACT_SCALAR(payload, '$.comment.id') as comment_id,
            JSON_EXTRACT_SCALAR(payload, '$.comment.position') as comment_position,
            JSON_EXTRACT_SCALAR(payload, '$.issue.id') as issue_id,
-           JSON_EXTRACT_SCALAR(payload, '$.comment.body') as comment_body,
-           CASE WHEN JSON_EXTRACT_SCALAR(payload, '$.issue.pull_request.url') IS NOT NULL THEN TRUE ELSE FALSE END as is_pull_request) as ice
+           JSON_EXTRACT_SCALAR(payload, '$.comment.body') as comment_body) as ice
            FROM tabRange
            WHERE type = 'IssueCommentEvent'
            )
@@ -91,8 +90,7 @@ SELECT
            JSON_EXTRACT_SCALAR(payload, '$.action') as action,
            (SELECT AS STRUCT 
            JSON_EXTRACT_SCALAR(payload, '$.issue.id') as issue_id,
-           JSON_EXTRACT_SCALAR(payload, '$.issue.pull_request.id') as pull_request_id,
-           JSON_EXTRACT_SCALAR(payload, '$.issue.pull_request.url') as pull_request_url) as ie
+           JSON_EXTRACT_SCALAR(payload, '$.issue.pull_request.id') as pull_request_id) as ie
            FROM tabRange
            WHERE type = 'IssuesEvent'
     )
@@ -108,9 +106,7 @@ SELECT
            (SELECT AS STRUCT
            JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.sha') as base_sha,
            JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.repo.id') as base_repo_id,
-           JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.created_at') as base_created_at,
-           JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.user.id') as base_user_id,
-           JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.user.login') as base_user_login) as pre
+           JSON_EXTRACT_SCALAR(payload, '$.pull_request.base.user.login') as base_user_login) as pre,  JSON_EXTRACT_SCALAR(payload, '$.pull_request.id') as pull_request_id) as pre
            FROM tabRange
            WHERE type = 'PullRequestEvent'
     )
@@ -160,7 +156,7 @@ SELECT
   WHERE action = "repository"  
 )
 
-Select * 
+Select DISTINCT * 
 From standard_info JOIN 
   (SELECT * FROM extra_info_cce UNION ALL 
   SELECT * FROM extra_info_prrce UNION ALL

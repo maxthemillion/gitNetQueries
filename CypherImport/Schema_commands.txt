@@ -1,32 +1,54 @@
 // ---prepare database schema---
 
-// create indices
-CREATE INDEX ON :USER(login)
-CREATE INDEX ON :REPO(gha_id)
-CREATE INDEX ON :OWNER(login)
+// create constraints (and implicitly indices)
+CREATE CONSTRAINT ON (u:USER) ASSERT u.login IS UNIQUE
+CREATE CONSTRAINT ON (o:OWNER) ASSERT o.login IS UNIQUE
 
-// create constraints
 CREATE CONSTRAINT ON (user:USER) ASSERT user.ght_id IS UNIQUE
 CREATE CONSTRAINT ON (user:USER) ASSERT user.gha_id IS UNIQUE
 
+CREATE CONSTRAINT ON (r:RELEASE) ASSERT r.gha_id IS UNIQUE
+CREATE CONSTRAINT ON (r:PULLREQUEST) ASSERT r.gha_id IS UNIQUE
+
+
 CREATE CONSTRAINT ON (r:REPO) ASSERT r.gha_id IS UNIQUE
-// only gha_id and not ght_id gets a UNIQUE constraint, because there are multiple occurencies of ght_id in the CreateEvent.csv. This can happen, because users create repositories with a certain name, delete it and recreate it again. Within the dataset, there are 97 ght_ids matched with more than 1 gha_id. Most of them match with 2, only about 10 have more than 3.
+// for REPO only gha_id and not ght_id gets a UNIQUE constraint, because there are multiple occurencies of ght_id in the CreateEvent.csv. This can happen, because users create repositories with a certain name, delete it and recreate it again. Within the dataset, there are 97 ght_ids matched with more than 1 gha_id. Most of them match with 2, only about 10 have more than 3.
 
 
 CREATE CONSTRAINT ON (i:ISSUE) ASSERT i.gha_id IS UNIQUE
-CREATE CONSTRAINT ON (p:PULLREQUEST) ASSERT p.gha_id IS UNIQUE
 CREATE CONSTRAINT ON (c:COMMIT) ASSERT c.sha IS UNIQUE
 
+CREATE CONSTRAINT ON (i:ISSUE) ASSERT i.event_id IS UNIQUE
+CREATE CONSTRAINT ON (i:PULLREQUEST) ASSERT i.event_id IS UNIQUE
+CREATE CONSTRAINT ON (i:REPO) ASSERT i.event_id IS UNIQUE
+CREATE CONSTRAINT ON (i:COLLABORATOR) ASSERT i.event_id IS UNIQUE
+CREATE CONSTRAINT ON (i:COMMENT) ASSERT i.event_id IS UNIQUE
+
+
+// --- delete existing data ---
+MATCH (n) DETACH DELETE n
 
 // --- import data ---
 
-// CreateEvent (Repositories)
-LOAD CSV FROM "file:///201601/CreateEvent.csv" AS row
-CREATE(:REPO {full_name: row[2], gha_id: toInt(row[3]), ght_id:toInt(row[9]), event_time: row[8], ght_forked_from:toInt(row[10]), owner_login:row[13], event_id:toInt(row[0]) })
+
+
+// -- CreateEvent (Repositories)
+USING PERIODIC COMMIT 1000
+LOAD CSV WITH HEADERS FROM "file:///Export_DataPrep/CreateEvent_prep" AS row
+CREATE(:REPO {
+	event_id:toInt(row.event_id),
+	event_time: row.event_time,
+	owner_login:row.owner_name,  
+	full_name: row.repo_name, 
+	gha_id: toInt(row.repo_id), 
+	ght_id:toInt(row.ght_repo_id), 
+	ght_forked_from:toInt(row.ght_forked_from)
+})
 
 // owners, who occur in the CreateEvent.csv
-LOAD CSV FROM "file:///201601/CreateEvent.csv" AS row
-WITH DISTINCT row[13] as owner_login
+USING PERIODIC COMMIT 1000
+LOAD CSV WITH HEADERS FROM "file:///Export_DataPrep/CreateEvent_prep" AS row
+WITH DISTINCT row.owner_name as owner_login
 CREATE(:OWNER {login:owner_login})
 
 // relationship between owners and repos
@@ -34,3 +56,181 @@ MATCH (n:REPO)
 MATCH (o:OWNER)
 WHERE o.login = n.owner_login
 MERGE (n)-[:belongs_to]->(o)
+
+// drop property owner_login on :REPO
+MATCH (r:REPO)
+REMOVE r.owner_login;
+
+
+
+
+// -- IssuesEvent
+USING PERIODIC COMMIT 1000
+LOAD CSV WITH HEADERS FROM "file:///Export_DataPrep/IssuesEvent_prep" AS row
+CREATE (:ISSUE{
+	event_id:toInt(row.event_id),
+    	event_time:row.event_time,
+    	repo_id:toInt(row.repo_id),
+	repo_full_name:row.repo_name,
+	owner_login:row.owner_name,
+    	gha_id:toInt(row.issue_id),
+    	pull_request_id:toInt(row.pull_request_id),
+    	actor_login:row.actor_login}
+);
+
+// relationship between issues and repos
+// create repos
+MATCH (i:ISSUE)
+MERGE (r:REPO{gha_id:i.repo_id})
+ON CREATE SET r.full_name=i.repo_full_name;
+
+// create relationships
+MATCH (r:REPO)
+MATCH (i:ISSUE)
+WHERE i.repo_id = r.gha_id
+MERGE (i)-[:to]->(r);
+
+
+// relationship between owner and repos created
+// first merge owners
+MATCH(i:ISSUE)
+MERGE (o:OWNER{login:i.owner_login});
+
+// then create relationships
+MATCH (i:ISSUE)-[x]->(r:REPO)
+MATCH (o:OWNER)
+WHERE i.owner_login = o.login
+WITH r, o
+MERGE (r)-[:belongs_to]->(o);
+
+// remove superfluous properties from issues
+MATCH (i:ISSUES) 
+REMOVE i.owner_login, i.repo_id, i.repo_full_name
+
+
+
+
+
+// -- PullRequestEvent
+USING PERIODIC COMMIT 1000
+LOAD CSV WITH HEADERS FROM "file:///Export_DataPrep/PullRequestEvent_prep" AS row
+CREATE (:PULLREQUEST{
+    	event_id:toInt(row.event_id),
+    	event_time:row.event_time,
+    	repo_id:toInt(row.base_repo_id),
+	repo_full_name:row.repo_name,
+	owner_login: row.owner_name
+    	gha_id:toInt(row.pull_request_id),
+	actor_login:row.actor_login,
+    	});
+
+// relationship between pull requests and issues
+// this might not connect all issues to pullrequests -> check!
+
+MATCH (i:ISSUE)
+MATCH (p:PULLREQUEST)
+WHERE i.pull_request_id = p.gha_id
+MERGE (i)-[:is]->(p) 
+
+// relationship between pull requests and repos
+// first merge repos
+MATCH(p:PULLREQUEST)
+MERGE(r:REPO{gha_id:p.repo_id})
+ON CREATE SET r.full_name = p.repo_full_name;
+
+// then create relationships
+MATCH(p:PULLREQUEST)
+MATCH(r:REPO)
+WHERE p.repo_id = r.gha_id
+MERGE (p)-[:to]->(r);
+
+// relationship between pullrequest and owner
+// first merge owners
+MATCH(p:PULLREQUEST)
+MERGE (o:OWNER{login:p.owner_login});
+
+// then create relationships
+MATCH (p:PULLREQUEST)-[x]->(r:REPO)
+MATCH (o:OWNER)
+WHERE p.owner_login = o.login
+WITH r, o
+MERGE (r)-[:belongs_to]->(o);
+
+// remove redundant properties from pullrequest
+MATCH (p:PULLREQUEST) REMOVE p.owner_login, p.repo_full_name, p.repo_id
+
+// remove property pull_request_id on :ISSUE
+MATCH (i:ISSUE)
+REMOVE i.pull_request_id
+
+
+
+
+// -- MemberEvent
+USING PERIODIC COMMIT 1000
+LOAD CSV WITH HEADERS FROM "file:///Export_DataPrep/MemberEvent_prep" AS row
+CREATE (:COLLABORATOR{
+    	event_id:toInt(row.event_id),
+    	event_time:row.event_time,
+    	repo_id:toInt(row.repo_id),
+	repo_full_name:row.repo_name,
+	owner_login: row.owner_name,
+    	actor_login:row.actor_login,
+    	member_login:row.member_login
+    	});
+
+// relationship between collaborator and repo
+// first merge repos
+MATCH (c:COLLABORATOR)
+MERGE (r:REPO{gha_id:c.repo_id})
+ON CREATE SET r.full_name = c.repo_full_name;
+
+// create relationships
+MATCH(c:COLLABORATOR)
+MATCH(r:REPO)
+WHERE c.repo_id = r.gha_id
+MERGE(c)-[:to]->(r);
+
+// relationship between collaborator and owners
+// first merge owners
+MATCH (c:COLLABORATOR)
+MERGE (o:OWNER{login:c.owner_login});
+
+// create relationship
+MATCH (c:COLLABORATOR)-->(r:REPO)
+MATCH (o:OWNER)
+WHERE c.owner_login = o.login
+WITH r, o
+MERGE (r)-[:belongs_to]->(o);
+
+// remove properties on :COLLABORATOR
+MATCH(c:COLLABORATOR)
+REMOVE c.repo_id, c.repo_full_name, c.owner_login
+
+
+
+
+
+// -- ReleaseEvent
+USING PERIODIC COMMIT 1000
+LOAD CSV WITH HEADERS FROM "file:///Export_DataPrep/ReleaseEvent_prep" AS row
+CREATE (:RELEASE{
+    	event_id:toInt(row.event_id),
+    	event_time:row.event_time,
+    	repo_id:toInt(row.repo_id),
+	repo_full_name:row.repo_name,
+	owner_login: row.owner_name,    
+	actor_login:row.actor_login,
+    	gha_id:toInt(row.release_id)
+    });
+
+// relationsip between repo and release
+MATCH(rep:REPO)
+MATCH(rel:RELEASE)
+WHERE(rep.gha_id = rel.repo_id)
+MERGE(rel)-[:to]->(rep)
+
+// remove property repo id on release
+MATCH(r:RELEASE)
+REMOVE r.repo_id
+
