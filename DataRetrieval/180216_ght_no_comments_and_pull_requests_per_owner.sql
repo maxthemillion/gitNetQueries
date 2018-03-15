@@ -1,5 +1,5 @@
--- counts 
-
+-- returns comment count to all repositories per owner within January 2014 to August 2017
+-- joins the comment count to a previously generated table holding pull request counts for all owners
 
 WITH comment_count as (
 SELECT ct, p.owner_id
@@ -34,7 +34,7 @@ FROM
     GROUP BY repo_id) as d
    JOIN `ghtorrent-bq.ght_2017_09_01.projects` as p
     ON d.repo_id = p.id)
-    x
+    
 SELECT * 
 FROM 
   (SELECT SUM(comment_count.ct) as comment_count, owner_id
